@@ -1,0 +1,51 @@
+{{define "navbar"}}
+	<header class="navbar bg-dark">
+		<section class="navbar-section m-2">
+			<a href="#" class="navbar-brand mr-2 text-light">Home</a>
+
+			{{range .Programs}}
+				<a id={{.ID}} href="#" class="btn btn-link text-gray">{{.Name}}</a>
+			{{end}}
+			
+		</section>
+	</header>
+{{end}}
+
+{{define "log"}}
+	{{range .Log}}
+		<div class="accordion">
+			<input type="checkbox" id="accordion-1" name="accordion-checkbox" hidden>
+			<label class="accordion-header" for="accordion-1">
+				<i class="icon icon-arrow-right mr-1"></i>
+				
+				{{.Type}}
+			
+			</label>
+			<div class="accordion-body">
+				
+			</div>
+		</div>
+	{{end}}
+{{end}}
+
+{{define "card"}}
+	<div class="card">
+
+		{{if .Image}}
+		<div class="card-image">
+			<img src={{.Image}} class="img-responsive">
+		</div>
+		{{end}}
+
+		<div class="card-header">
+			<div class="card-title h5">{{.Title}}</div>
+			<div class="card-subtitle text-gray">{{.Subtitle}}</div>
+		</div>
+		<div class="card-body">
+			{{.Body}}
+		</div>
+		<div class="card-footer">
+			<button class="btn btn-primary">{{.Footer}}</button>
+		</div>
+	</div>
+{{end}}

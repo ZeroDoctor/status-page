@@ -1,14 +1,23 @@
 <!DOCTYPE html>
 <html>
-	<header>
-		<title>{{.title}}</title>
-	</header>
+	<head>
+		<title>{{.Title}}</title>
+		<link rel="stylesheet" href="./css/spectre.min.css"/>
+		<link rel="stylesheet" href="./css/spectre-exp.min.css"/>
+		<link rel="stylesheet" href="./css/spectre-icons.min.css"/>
+	</head>
 	<body>
 
-		<h1>My First Heading</h1>
-		<p>My first paragraph.</p>
+		{{template "navbar" .}}
 
-		{{template "card"}}
+		<div class="container">
+			<div class="columns p-relative">
+				<div id="logs" class="column col-9 p-centered"> 
+					{{template "log" .}}
+				</div>
+			</div>
+		</div>
 
+		<script src="./js/websocket.js" defer></script>
 	</body>
 </html> 

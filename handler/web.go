@@ -5,17 +5,29 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	ppt "github.com/zerodoctor/goprettyprinter"
 )
 
+// Log :
+type Log struct {
+	Type       string `json:"type"`
+	Msg        string `json:"msg"`
+	LogTime    string `json:"log_time"`
+	FileName   string `json:"file_name"`
+	FuncName   string `json:"func_name"`
+	LineNumber int    `json:"line_number"`
+	Index      int    `json:"index"`
+	AppID      string `json:"app_id"`
+}
+
 // App :
 type App struct {
 	ID   string
 	Name string
+	Logs []Log // make db later
 }
 
 // WebMsg :
@@ -26,11 +38,25 @@ type WebMsg struct {
 
 // WebHandler :
 type WebHandler struct {
-	socket    websocket.Upgrader
-	clients   map[string]*websocket.Conn
-	Broadcast chan WebMsg
-
+	socket     websocket.Upgrader
+	clients    map[string]*websocket.Conn
 	programMap map[string]App
+
+	Broadcast chan WebMsg
+}
+
+// NewWebHandler :
+func NewWebHandler() *WebHandler {
+	return &WebHandler{
+		socket: websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool {
+				return true
+			},
+		},
+		clients:    make(map[string]*websocket.Conn),
+		Broadcast:  make(chan WebMsg, 1000),
+		programMap: make(map[string]App),
+	}
 }
 
 // WsBroadcast :
@@ -46,13 +72,9 @@ func (wh *WebHandler) WsBroadcast() {
 				err := conn.WriteJSON(msg)
 				if err != nil {
 					ppt.Warnf("Failed to write to client: %s\n", err)
-					if strings.Contains(err.Error(), "broken pipe") ||
-						strings.Contains(err.Error(), "connection timed out") ||
-						strings.Contains(err.Error(), "no route to host") {
 
-						fmt.Printf("Removing client %s\n", connID)
-						delete(wh.clients, connID)
-					}
+					fmt.Printf("Removing client %s\n", connID)
+					delete(wh.clients, connID)
 				} else {
 					if len(buffMsg[connID]) > 0 {
 						for _, m := range buffMsg[connID] {
@@ -122,7 +144,8 @@ func (wh *WebHandler) Websocket(ctx *gin.Context) {
 	}
 }
 
-func (wh *WebHandler) NewProgram(ctx *gin.Context) {
+// NewApp :
+func (wh *WebHandler) NewApp(ctx *gin.Context) {
 	name := ctx.Query("name")
 	id := RandString(10)
 
@@ -133,23 +156,36 @@ func (wh *WebHandler) NewProgram(ctx *gin.Context) {
 	wh.programMap[id] = program
 
 	ppt.Infoln("Registered new program:", name)
+	ctx.String(http.StatusAccepted, id)
 }
 
+// NewLog :
 func (wh *WebHandler) NewLog(ctx *gin.Context) {
 	id := ctx.Query("id")
 
-	// TODO: parse json
-	// TODO: send log to socket
+	var log Log
+	err := ctx.BindJSON(&log)
+	if err != nil {
+		ppt.Errorln("failed to parse json to log:\n\t", err.Error())
+		return
+	}
 
-	ppt.Infoln("New Log from:", id)
+	app := wh.programMap[id]
+	log.Index = len(app.Logs)
+	app.Logs = append(app.Logs, log)
+	wh.programMap[id] = app
+
+	wh.Broadcast <- WebMsg{
+		Type: "log",
+		Data: log,
+	}
 }
 
+const charset = "abcdefghijklmnopqrstuvwxyz" +
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789~"
+
+// RandString :
 func RandString(length int) string {
-
-	const charset = "abcdefghijklmnopqrstuvwxyz" +
-		"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" +
-		"<>?*&^%$#@!(){}[];:,.~`"
-
 	b := make([]byte, length)
 	for i := range b {
 		b[i] = charset[rand.Intn(len(charset))]

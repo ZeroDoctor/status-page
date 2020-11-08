@@ -3,52 +3,14 @@ package main
 import (
 	"fmt"
 	"html/template"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/fasthttp/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/zerodoctor/go-status/handler"
 	ppt "github.com/zerodoctor/goprettyprinter"
 )
-
-func main() {
-
-	ppt.Init()
-	ppt.Infoln("Starting Server...")
-
-	wh := &handler.WebHandler{
-		socket: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				return true
-			},
-		},
-		clients:   make(map[string]*websocket.Conn),
-		Broadcast: make(chan WebMsg, 1000),
-	}
-
-	router := gin.Default()
-
-	router.Static("/css", "./assets/css/")
-	router.Static("/js", "./assets/js/")
-	router.Static("/img", "./assets/img/")
-
-	html := template.Must(loadTemplates("./assets/html"))
-	router.SetHTMLTemplate(html)
-
-	router.GET("/", wh.RenderIndex)
-	router.GET("/ws", wh.Websocket)
-	router.POST("/new/program", wh.NewProgram)
-	router.POST("/new/log", wh.NewLog)
-
-	go wh.WsBroadcast()
-
-	go wh.SendFake()
-
-	router.Run(":3000")
-}
 
 func loadTemplates(path string) (*template.Template, error) {
 
@@ -74,4 +36,32 @@ func loadTemplates(path string) (*template.Template, error) {
 	}
 
 	return template.ParseFiles(files...)
+}
+
+func main() {
+
+	ppt.Init()
+	ppt.Infoln("Starting Server...")
+
+	wh := handler.NewWebHandler()
+
+	router := gin.Default()
+
+	html := template.Must(loadTemplates("./assets/html"))
+	router.SetHTMLTemplate(html)
+
+	router.Static("/css", "./assets/css/")
+	router.Static("/js", "./assets/js/")
+	router.Static("/img", "./assets/img/")
+	router.StaticFile("/favicon.ico", "./assets/favicon.ico")
+
+	router.GET("/", wh.RenderIndex)
+	router.GET("/ws", wh.Websocket)
+	router.POST("/new/app", wh.NewApp)
+	router.POST("/new/log", wh.NewLog)
+
+	go wh.WsBroadcast()
+	go SendFake(wh)
+
+	router.Run(":3000")
 }

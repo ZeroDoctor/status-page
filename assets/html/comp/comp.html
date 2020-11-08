@@ -1,9 +1,9 @@
 {{define "navbar"}}
 	<header class="navbar bg-dark">
 		<section class="navbar-section m-2">
-			<a href="#" class="navbar-brand mr-2 text-light">Home</a>
+			<a href="#" class="navbar-brand mr-2 text-light">Status Page</a>
 
-			{{range .Programs}}
+			{{range .Apps}}
 				<a id={{.ID}} href="#" class="btn btn-link text-gray">{{.Name}}</a>
 			{{end}}
 			

@@ -4,6 +4,8 @@ go 1.15
 
 require (
 	github.com/fasthttp/websocket v1.4.3
+	github.com/gin-contrib/multitemplate v0.0.0-20200916052041-666a7309d230
+	github.com/gin-gonic/gin v1.6.3
 	github.com/gofiber/fiber/v2 v2.1.1
 	github.com/gofiber/template v1.6.4
 	github.com/gorilla/websocket v1.4.2

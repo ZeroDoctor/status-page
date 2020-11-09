@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
 
@@ -21,13 +22,14 @@ type Log struct {
 	LineNumber int    `json:"line_number"`
 	Index      int    `json:"index"`
 	AppID      string `json:"app_id"`
+	AppName    string `json:"app_name"`
 }
 
 // App :
 type App struct {
-	ID   string
-	Name string
-	Logs []Log // make db later
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Logs []Log  `json:"-"` // make db later
 }
 
 // WebMsg :
@@ -96,14 +98,6 @@ func (wh *WebHandler) RenderIndex(ctx *gin.Context) {
 
 	apps := []App{
 		{
-			ID:   "asdfasdf",
-			Name: "Test-1",
-		},
-		{
-			ID:   "qwerqwer",
-			Name: "Test-2",
-		},
-		{
 			ID:   "zxcvzcv",
 			Name: "Hello There",
 		},
@@ -137,11 +131,18 @@ func (wh *WebHandler) Websocket(ctx *gin.Context) {
 		return
 	}
 
-	if webMsg.Type == "init" {
-		ppt.Infoln("Found connection:", webMsg.Data.(string))
-		data := webMsg.Data.(string)
-		wh.clients[data] = conn
+	ppt.Infoln("Found connection:", webMsg.Data.(string))
+	data := webMsg.Data.(string)
+	wh.clients[data] = conn
+
+	if webMsg.Type == "web" {
+
 	}
+
+	if webMsg.Type == "client" {
+		go wh.ReadMessage(conn)
+	}
+
 }
 
 // NewApp :
@@ -155,8 +156,50 @@ func (wh *WebHandler) NewApp(ctx *gin.Context) {
 	}
 	wh.programMap[id] = program
 
+	wh.Broadcast <- WebMsg{
+		Type: "app",
+		Data: program,
+	}
+
 	ppt.Infoln("Registered new program:", name)
 	ctx.String(http.StatusAccepted, id)
+}
+
+// ReadMessage :
+func (wh *WebHandler) ReadMessage(conn *websocket.Conn) {
+	defer conn.Close()
+
+	for {
+
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("error: %v", err)
+			}
+			break
+		}
+
+		// * assume its a log for now
+		var log Log
+
+		err = json.Unmarshal(msg, &log)
+		if err != nil {
+			ppt.Errorln("failed to Unmarshal msg:\n\t", err.Error())
+			continue
+		}
+
+		id := log.AppID
+
+		app := wh.programMap[id]
+		log.Index = len(app.Logs)
+		app.Logs = append(app.Logs, log)
+		wh.programMap[id] = app
+
+		wh.Broadcast <- WebMsg{
+			Type: "log",
+			Data: log,
+		}
+	}
 }
 
 // NewLog :

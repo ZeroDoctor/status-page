@@ -1,6 +1,7 @@
 
 let socket
 let log_container
+let nav_container
 const connID = rand_string(12)
 
 const log_types = {
@@ -14,6 +15,7 @@ window.onload = function() {
 	connect()
 
 	log_container = document.getElementById("logs")
+	nav_container = document.getElementById("navs")
 }
 
 function connect() {
@@ -22,7 +24,7 @@ function connect() {
 
 	socket.addEventListener("open", function(event) {
 		socket.send(JSON.stringify({
-			type: "init",
+			type: "web",
 			data: connID,
 		}))
 
@@ -46,7 +48,11 @@ function handle_message(event) {
 	switch(msg.type) {
 		case "log":
 			add_log(msg.data)
-		break;
+		break
+
+		case "app":
+			add_app(msg.data)
+		break
 		
 		default:
 			console.log(msg)
@@ -56,33 +62,38 @@ function handle_message(event) {
 function add_log(data) {
 
 	type = data["type"]
+	msg = data["msg"]
 	bg_color = log_types[type][0]
 	text_color = log_types[type][1]
 
 	file_name = data["file_name"]
 	func_name = data["func_name"]
 	line_number = data["line_number"]
+	accordion_id = data["index"]+data["app_id"]
+
+	msg_cut = msg.length > 20 ? 20 : msg.length
 
 	let html = `
 	<div class="accordion">
-		<input type="checkbox" id="accordion-`+data["index"]+data["app_id"]+`" name="accordion-checkbox" hidden>
+		<input type="checkbox" id="accordion-`+accordion_id+`" name="accordion-checkbox" hidden>
 
 		<div class="columns col-oneline `+bg_color+` `+text_color+`">
 			<div class="column col-8">
-				<label class="accordion-header" for="accordion-`+data["index"]+data["app_id"]+`">
+				<label class="accordion-header" for="accordion-`+accordion_id+`">
 					<i class="icon icon-arrow-right mr-1"></i>
-					`+type+`
+					`+data["app_name"]+` | `+msg.substring(0, msg_cut)+`...
 				</label>
 			</div>
 			<div class="column col-4">
-				<p> `+file_name+` | `+func_name+` | `+line_number+` </p>
+				<p> `+data["log_time"]+` </p>
 			</div>
 		</div>
 
 		<div class="accordion-body">
 			<div class="tile p-2 bg-gray">
 				<div class="tile-content">
-					<p class="tile-title"> `+data["msg"]+` </p>
+					<p class="tile-title"> `+msg+` </p>
+					<p class="tile-subtitle"> `+file_name+` | `+func_name+` | `+line_number+` </p>
 				</div>
 			</div>
 		</div>
@@ -92,7 +103,19 @@ function add_log(data) {
 	var new_content = document.createElement("div")
 	new_content.innerHTML = html.trim()
 
-	log_container.appendChild(new_content)
+	log_container.insertBefore(new_content, log_container.firstChild)
+}
+
+function add_app(data) {
+
+	let html = `
+	<a id=`+data["id"]+` href="#" class="btn btn-link text-gray">`+data["name"]+`</a>
+	`
+
+	var new_content = document.createElement("div")
+	new_content.innerHTML = html.trim()
+
+	nav_container.appendChild(new_content)
 }
 
 function rand_string(){

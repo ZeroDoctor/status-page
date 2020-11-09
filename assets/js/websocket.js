@@ -50,6 +50,10 @@ function handle_message(event) {
 			add_log(msg.data)
 		break
 
+		case "logs":
+			msg.data.forEach(log => add_log(log))
+		break
+
 		case "app":
 			add_app(msg.data)
 		break
@@ -61,7 +65,7 @@ function handle_message(event) {
 
 function add_log(data) {
 
-	type = data["type"]
+	type = data["log_type"]
 	msg = data["msg"]
 	bg_color = log_types[type][0]
 	text_color = log_types[type][1]

@@ -32,7 +32,7 @@ func SendFake(wh *handler.WebHandler) {
 
 	resp.Body.Close()
 
-	socket, err := createClient("http://127.0.0.1:3000/ws")
+	socket, err := createClient("127.0.0.1:3000", "/ws")
 	if err != nil {
 		ppt.Errorln("failed to create client:\n\t", err.Error())
 		return
@@ -48,33 +48,44 @@ func SendFake(wh *handler.WebHandler) {
 		return
 	}
 
+	count := 0
+
 	for {
 		time.Sleep(time.Second * 3)
 
-		log := handler.Log{
-			Type:       logTypes[rand.Intn(3)],
-			Msg:        "this is a message: " + handler.RandString(6),
-			LogTime:    time.Now().Format(time.RFC3339),
-			FileName:   "fakeclient.go",
-			FuncName:   "SendFake",
-			LineNumber: rand.Intn(1000),
-			AppID:      id,
-			AppName:    "fakeClient",
+		logs := []handler.Log{
+			{
+				Type:       logTypes[rand.Intn(3)],
+				Msg:        "this is a message: " + handler.RandString(6),
+				LogTime:    time.Now().Format(time.RFC3339),
+				FileName:   "fakeclient.go",
+				FuncName:   "SendFake",
+				LineNumber: rand.Intn(1000),
+				AppID:      id,
+				AppName:    "fakeClient",
+				Index:      count,
+			},
+		}
+		count++
+
+		msg = handler.WebMsg{
+			Type: "logs",
+			Logs: logs,
 		}
 
-		err = socket.WriteJSON(log)
+		err = socket.WriteJSON(msg)
 		if err != nil {
-			ppt.Errorln("failed to send log:\n\t", err)
+			ppt.Errorln("failed to send logs:\n\t", err)
 		}
 	}
 }
 
-func createClient(address string) (*websocket.Conn, error) {
+func createClient(address, path string) (*websocket.Conn, error) {
 
 	u := url.URL{
 		Scheme: "ws",
-		Host:   "127.0.0.1:3000",
-		Path:   "/ws",
+		Host:   address,
+		Path:   path,
 	}
 
 	socket, resp, err := websocket.DefaultDialer.Dial(u.String(), nil)

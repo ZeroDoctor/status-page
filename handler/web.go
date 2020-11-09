@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -14,28 +15,60 @@ import (
 
 // Log :
 type Log struct {
-	Type       string `json:"type"`
+	Type       string `json:"log_type"`
 	Msg        string `json:"msg"`
 	LogTime    string `json:"log_time"`
 	FileName   string `json:"file_name"`
 	FuncName   string `json:"func_name"`
 	LineNumber int    `json:"line_number"`
 	Index      int    `json:"index"`
+	Session    int    `json:"session"`
 	AppID      string `json:"app_id"`
 	AppName    string `json:"app_name"`
 }
 
+// Value :
+func (l Log) Value() (driver.Value, error) {
+	return []driver.Value{
+		l.Type,
+		l.Msg,
+		l.LogTime,
+		l.FileName,
+		l.FuncName,
+		l.LineNumber,
+		l.Index,
+		l.AppID,
+		l.AppName,
+		l.Session,
+	}, nil
+}
+
 // App :
 type App struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Logs []Log  `json:"-"` // make db later
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	IPAddress  string `json:"ip_address"`
+	DeviceName string `json:"device_name"`
+	Session    int    `json:"session"`
+	Logs       []Log  `json:"-"` // make db later
+}
+
+// Value :
+func (a App) Value() (driver.Value, error) {
+	return []driver.Value{
+		a.ID,
+		a.Name,
+		a.IPAddress,
+		a.DeviceName,
+		a.Session,
+	}, nil
 }
 
 // WebMsg :
 type WebMsg struct {
 	Type string      `json:"type"`
 	Data interface{} `json:"data"`
+	Logs []Log       `json:"logs"`
 }
 
 // WebHandler :
@@ -43,12 +76,13 @@ type WebHandler struct {
 	socket     websocket.Upgrader
 	clients    map[string]*websocket.Conn
 	programMap map[string]App
+	dbHandler  *DBHandler
 
 	Broadcast chan WebMsg
 }
 
 // NewWebHandler :
-func NewWebHandler() *WebHandler {
+func NewWebHandler(dbHandler *DBHandler) *WebHandler {
 	return &WebHandler{
 		socket: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
@@ -58,6 +92,7 @@ func NewWebHandler() *WebHandler {
 		clients:    make(map[string]*websocket.Conn),
 		Broadcast:  make(chan WebMsg, 1000),
 		programMap: make(map[string]App),
+		dbHandler:  dbHandler,
 	}
 }
 
@@ -147,18 +182,21 @@ func (wh *WebHandler) Websocket(ctx *gin.Context) {
 
 // NewApp :
 func (wh *WebHandler) NewApp(ctx *gin.Context) {
+	id := ctx.Query("id")
 	name := ctx.Query("name")
-	id := RandString(10)
+	device := ctx.Query("device")
+	ip := ctx.Query("ip") // TODO: maybe not do this
+	app := wh.dbHandler.AppID(id, name, device, ip)
 
-	program := App{
-		ID:   id,
-		Name: name,
-	}
-	wh.programMap[id] = program
+	// TODO: find -> increment and return/create session number
+
+	wh.programMap[id] = app
+
+	wh.dbHandler.SaveApp(app)
 
 	wh.Broadcast <- WebMsg{
 		Type: "app",
-		Data: program,
+		Data: app,
 	}
 
 	ppt.Infoln("Registered new program:", name)
@@ -180,47 +218,34 @@ func (wh *WebHandler) ReadMessage(conn *websocket.Conn) {
 		}
 
 		// * assume its a log for now
-		var log Log
+		var web WebMsg
 
-		err = json.Unmarshal(msg, &log)
+		err = json.Unmarshal(msg, &web)
 		if err != nil {
 			ppt.Errorln("failed to Unmarshal msg:\n\t", err.Error())
 			continue
 		}
 
-		id := log.AppID
+		if web.Type == "logs" {
+			if len(web.Logs) <= 0 {
+				continue
+			}
 
-		app := wh.programMap[id]
-		log.Index = len(app.Logs)
-		app.Logs = append(app.Logs, log)
-		wh.programMap[id] = app
+			logs := web.Logs
+			id := logs[0].AppID
 
-		wh.Broadcast <- WebMsg{
-			Type: "log",
-			Data: log,
+			app := wh.programMap[id]
+			app.Logs = append(app.Logs, logs...)
+			wh.programMap[id] = app
+
+			wh.dbHandler.SaveLogs(logs)
+
+			wh.Broadcast <- WebMsg{
+				Type: "logs",
+				Data: logs,
+			}
 		}
-	}
-}
 
-// NewLog :
-func (wh *WebHandler) NewLog(ctx *gin.Context) {
-	id := ctx.Query("id")
-
-	var log Log
-	err := ctx.BindJSON(&log)
-	if err != nil {
-		ppt.Errorln("failed to parse json to log:\n\t", err.Error())
-		return
-	}
-
-	app := wh.programMap[id]
-	log.Index = len(app.Logs)
-	app.Logs = append(app.Logs, log)
-	wh.programMap[id] = app
-
-	wh.Broadcast <- WebMsg{
-		Type: "log",
-		Data: log,
 	}
 }
 

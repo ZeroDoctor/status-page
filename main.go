@@ -39,11 +39,11 @@ func loadTemplates(path string) (*template.Template, error) {
 }
 
 func main() {
-
 	ppt.Init()
 	ppt.Infoln("Starting Server...")
 
-	wh := handler.NewWebHandler()
+	dbh := handler.NewDBHandler()
+	wh := handler.NewWebHandler(dbh)
 
 	router := gin.Default()
 
@@ -58,7 +58,7 @@ func main() {
 	router.GET("/", wh.RenderIndex)
 	router.GET("/ws", wh.Websocket)
 	router.POST("/new/app", wh.NewApp)
-	router.POST("/new/log", wh.NewLog)
+	// TODO: create init route
 
 	go wh.WsBroadcast()
 	go SendFake(wh)

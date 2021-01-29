@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -10,75 +9,18 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/zerodoctor/go-status/model"
 	ppt "github.com/zerodoctor/goprettyprinter"
 )
-
-// Log :
-type Log struct {
-	Type       string `json:"log_type"`
-	Msg        string `json:"msg"`
-	LogTime    string `json:"log_time"`
-	FileName   string `json:"file_name"`
-	FuncName   string `json:"func_name"`
-	LineNumber int    `json:"line_number"`
-	Index      int    `json:"index"`
-	Session    int    `json:"session"`
-	AppID      string `json:"app_id"`
-	AppName    string `json:"app_name"`
-}
-
-// Value :
-func (l Log) Value() (driver.Value, error) {
-	return []driver.Value{
-		l.Type,
-		l.Msg,
-		l.LogTime,
-		l.FileName,
-		l.FuncName,
-		l.LineNumber,
-		l.Index,
-		l.AppID,
-		l.AppName,
-		l.Session,
-	}, nil
-}
-
-// App :
-type App struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	IPAddress  string `json:"ip_address"`
-	DeviceName string `json:"device_name"`
-	Session    int    `json:"session"`
-	Logs       []Log  `json:"-"` // make db later
-}
-
-// Value :
-func (a App) Value() (driver.Value, error) {
-	return []driver.Value{
-		a.ID,
-		a.Name,
-		a.IPAddress,
-		a.DeviceName,
-		a.Session,
-	}, nil
-}
-
-// WebMsg :
-type WebMsg struct {
-	Type string      `json:"type"`
-	Data interface{} `json:"data"`
-	Logs []Log       `json:"logs"`
-}
 
 // WebHandler :
 type WebHandler struct {
 	socket     websocket.Upgrader
 	clients    map[string]*websocket.Conn
-	programMap map[string]App
+	programMap map[string]model.App
 	dbHandler  *DBHandler
 
-	Broadcast chan WebMsg
+	Broadcast chan model.WebMsg
 }
 
 // NewWebHandler :
@@ -90,8 +32,8 @@ func NewWebHandler(dbHandler *DBHandler) *WebHandler {
 			},
 		},
 		clients:    make(map[string]*websocket.Conn),
-		Broadcast:  make(chan WebMsg, 1000),
-		programMap: make(map[string]App),
+		Broadcast:  make(chan model.WebMsg, 1000),
+		programMap: make(map[string]model.App),
 		dbHandler:  dbHandler,
 	}
 }
@@ -99,7 +41,7 @@ func NewWebHandler(dbHandler *DBHandler) *WebHandler {
 // WsBroadcast :
 func (wh *WebHandler) WsBroadcast() {
 
-	buffMsg := make(map[string][]WebMsg)
+	buffMsg := make(map[string][]model.WebMsg)
 
 	for msg := range wh.Broadcast {
 
@@ -118,7 +60,7 @@ func (wh *WebHandler) WsBroadcast() {
 							conn.WriteJSON(m)
 						}
 
-						buffMsg[connID] = []WebMsg{}
+						buffMsg[connID] = []model.WebMsg{}
 					}
 				}
 			} else {
@@ -131,7 +73,7 @@ func (wh *WebHandler) WsBroadcast() {
 // RenderIndex :
 func (wh *WebHandler) RenderIndex(ctx *gin.Context) {
 
-	apps := []App{
+	apps := []model.App{
 		{
 			ID:   "zxcvzcv",
 			Name: "Hello There",
@@ -159,7 +101,7 @@ func (wh *WebHandler) Websocket(ctx *gin.Context) {
 		return
 	}
 
-	webMsg := WebMsg{}
+	webMsg := model.WebMsg{}
 	err = json.Unmarshal(p, &webMsg)
 	if err != nil {
 		ppt.Errorln("failed to Unmarshal:\n\t", err.Error())
@@ -194,13 +136,13 @@ func (wh *WebHandler) NewApp(ctx *gin.Context) {
 
 	wh.dbHandler.SaveApp(app)
 
-	wh.Broadcast <- WebMsg{
+	wh.Broadcast <- model.WebMsg{
 		Type: "app",
 		Data: app,
 	}
 
 	ppt.Infoln("Registered new program:", name)
-	ctx.String(http.StatusAccepted, id)
+	ctx.String(http.StatusAccepted, app.ID)
 }
 
 // ReadMessage :
@@ -218,7 +160,7 @@ func (wh *WebHandler) ReadMessage(conn *websocket.Conn) {
 		}
 
 		// * assume its a log for now
-		var web WebMsg
+		var web model.WebMsg
 
 		err = json.Unmarshal(msg, &web)
 		if err != nil {
@@ -233,14 +175,18 @@ func (wh *WebHandler) ReadMessage(conn *websocket.Conn) {
 
 			logs := web.Logs
 			id := logs[0].AppID
+			if id == "" {
+				ppt.Errorln("failed to receive id")
+				continue
+			}
 
 			app := wh.programMap[id]
 			app.Logs = append(app.Logs, logs...)
 			wh.programMap[id] = app
 
-			wh.dbHandler.SaveLogs(logs)
+			logs = wh.dbHandler.SaveLogs(logs)
 
-			wh.Broadcast <- WebMsg{
+			wh.Broadcast <- model.WebMsg{
 				Type: "logs",
 				Data: logs,
 			}

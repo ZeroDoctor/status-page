@@ -2,12 +2,14 @@ package handler
 
 import (
 	"database/sql/driver"
+	"fmt"
 	"os"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3" // sqlite db
+	_ "github.com/lib/pq" // postgresql db
 
+	"github.com/zerodoctor/go-status/model"
 	ppt "github.com/zerodoctor/goprettyprinter"
 )
 
@@ -19,22 +21,26 @@ type DBHandler struct {
 // NewDBHandler :
 func NewDBHandler() *DBHandler {
 
-	local, err := sqlx.Connect("sqlite3", "./db/local.db")
+	user := os.Getenv("psql_user")
+	password := os.Getenv("psql_password")
+	host := os.Getenv("psql_host")
+	dbname := os.Getenv("dbname")
+	sslMode := os.Getenv("psql_sslMode")
+
+	local, err := sqlx.Connect("postgres", "user="+user+" password="+password+" host="+host+" dbname="+dbname+" sslmode="+sslMode)
 	if err != nil {
 		ppt.Errorln("failed to connect to db:\n\t", err.Error())
 		os.Exit(1)
 	}
 
 	schema := `
-		PRAGMA foreign_keys = 1;
 		CREATE TABLE IF NOT EXISTS apps (
 			id          TEXT,
 			name        TEXT,
 			ip_address  TEXT,
 			device_name TEXT,
 			session     INTEGER,
-
-			PRIMARY KEY (id)
+			CONSTRAINT apps_pk PRIMARY KEY (id)
 		);
 	`
 
@@ -46,18 +52,17 @@ func NewDBHandler() *DBHandler {
 
 	schema = `
 		CREATE TABLE IF NOT EXISTS logs (
+			id          SERIAL,
 			type        TEXT,
 			msg         TEXT,
 			log_time    TIMESTAMP,
 			file_name   TEXT,
 			func_name   TEXT,
 			line_number INTEGER,
-			'index'     INTEGER,
-			app_id      TEXT,
+			app_id      TEXT REFERENCES apps,
 			app_name    TEXT,
 			session     INTEGER,
-
-			FOREIGN KEY (app_id) REFERENCES apps( id )
+			CONSTRAINT logs_pk PRIMARY KEY (id)
 		);
 	`
 
@@ -73,8 +78,8 @@ func NewDBHandler() *DBHandler {
 }
 
 // GenerateAppID :
-func (dbh *DBHandler) GenerateAppID(name, device, ip string) App {
-	var app App
+func (dbh *DBHandler) GenerateAppID(name, device, ip string) model.App {
+	var app model.App
 
 	id := RandString(12)
 	for app.Name != "" {
@@ -85,7 +90,7 @@ func (dbh *DBHandler) GenerateAppID(name, device, ip string) App {
 
 	ppt.Infoln("Generated app id:", id)
 
-	return App{
+	return model.App{
 		ID:         id,
 		Name:       name,
 		DeviceName: device,
@@ -95,9 +100,9 @@ func (dbh *DBHandler) GenerateAppID(name, device, ip string) App {
 }
 
 // AppID :
-func (dbh *DBHandler) AppID(id, name, device, ip string) App {
+func (dbh *DBHandler) AppID(id, name, device, ip string) model.App {
 
-	var app App
+	var app model.App
 
 	if id == "" {
 		return dbh.GenerateAppID(name, device, ip)
@@ -117,7 +122,7 @@ func (dbh *DBHandler) AppID(id, name, device, ip string) App {
 }
 
 // SaveApp :
-func (dbh *DBHandler) SaveApp(app App) {
+func (dbh *DBHandler) SaveApp(app model.App) {
 	template := `
 		INSERT INTO apps (
 			id, name,
@@ -135,26 +140,33 @@ func (dbh *DBHandler) SaveApp(app App) {
 	var values []driver.Valuer
 	values = append(values, app)
 
-	dbh.execQuery(values, template)
+	dbh.execHandler(values, template)
 }
 
 // SaveLogs :
-func (dbh *DBHandler) SaveLogs(logs []Log) {
+func (dbh *DBHandler) SaveLogs(logs []model.Log) []model.Log {
 	template := `
 		INSERT INTO logs (
 			type, msg, log_time,
 			file_name, func_name,
-			line_number, 'index', 
-			app_id, app_name, session
+			line_number, app_id, 
+			app_name, session
 		) VALUES
-	` + printRows(len(logs))
+	` + printRows(len(logs)) + `
+		RETURNING id;
+	`
 
 	var values []driver.Valuer
 	for _, log := range logs {
 		values = append(values, log)
 	}
 
-	dbh.execQuery(values, template)
+	ids := dbh.queryHandler(values, template)
+	for i := 0; i < len(ids); i++ {
+		logs[i].Index = ids[i].(int64)
+	}
+
+	return logs
 }
 
 // printRows : creates a string of '(?)' for each item submited to database
@@ -184,7 +196,7 @@ func (dbh *DBHandler) transact(fn func(*sqlx.Tx) error) error {
 	return tx.Commit()
 }
 
-func (dbh *DBHandler) execQuery(items []driver.Valuer, template string) {
+func (dbh *DBHandler) execHandler(items []driver.Valuer, template string) {
 	params := make([]interface{}, len(items))
 	for i, b := range items {
 		params[i] = b
@@ -192,7 +204,7 @@ func (dbh *DBHandler) execQuery(items []driver.Valuer, template string) {
 
 	query, args, err := sqlx.In(template, params...)
 	if err != nil {
-		ppt.Errorf("Failed to bind query:\n\t%+v\n", err)
+		ppt.Errorf("failed to bind query [exec]:\n\t%s\n", err.Error())
 		return
 	}
 
@@ -210,4 +222,49 @@ func (dbh *DBHandler) execQuery(items []driver.Valuer, template string) {
 		ppt.Errorf("failed writing(exec) to table:\n\terror: %s\n", err.Error())
 		return
 	}
+}
+
+func (dbh *DBHandler) queryHandler(items []driver.Valuer, template string) []interface{} {
+	params := make([]interface{}, len(items))
+	for i, b := range items {
+		params[i] = b
+	}
+
+	query, args, err := sqlx.In(template, params...)
+	if err != nil {
+		ppt.Errorf("failed to bind query [query]:\n\t%s\n", err.Error())
+		return nil
+	}
+
+	query = dbh.local.Rebind(query)
+
+	var interList []interface{}
+	err = dbh.transact(func(tx *sqlx.Tx) error {
+		rows, err := tx.Query(query, args...)
+		if err != nil {
+			return fmt.Errorf("failed writing(query) to table: \n\terror: %s", err.Error())
+		}
+
+		var inter interface{}
+		for rows.Next() {
+			err := rows.Scan(&inter)
+			if err != nil {
+				rows.Close()
+				return fmt.Errorf("failed to scan row - aborting process: %s", err.Error())
+			}
+			interList = append(interList, inter)
+		}
+		rows.Close()
+		err = rows.Err()
+		if err != nil {
+			return fmt.Errorf("aborting - failed on processing rows: %s", err.Error())
+		}
+
+		return nil
+	})
+	if err != nil {
+		ppt.Errorf("failed writing(query) to table\n\terror:%s\n", err.Error())
+	}
+
+	return interList
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/zerodoctor/go-status/handler"
+	"github.com/zerodoctor/go-status/model"
 	ppt "github.com/zerodoctor/goprettyprinter"
 )
 
@@ -27,7 +28,11 @@ func SendFake(wh *handler.WebHandler) {
 		return
 	}
 
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		ppt.Errorln("Failed to get app id\n\t", err.Error())
+		return
+	}
 	id := string(body)
 
 	resp.Body.Close()
@@ -38,7 +43,7 @@ func SendFake(wh *handler.WebHandler) {
 		return
 	}
 
-	msg := handler.WebMsg{
+	msg := model.WebMsg{
 		Type: "client",
 		Data: handler.RandString(12),
 	}
@@ -48,12 +53,10 @@ func SendFake(wh *handler.WebHandler) {
 		return
 	}
 
-	count := 0
-
 	for {
 		time.Sleep(time.Second * 3)
 
-		logs := []handler.Log{
+		logs := []model.Log{
 			{
 				Type:       logTypes[rand.Intn(3)],
 				Msg:        "this is a message: " + handler.RandString(6),
@@ -63,12 +66,10 @@ func SendFake(wh *handler.WebHandler) {
 				LineNumber: rand.Intn(1000),
 				AppID:      id,
 				AppName:    "fakeClient",
-				Index:      count,
 			},
 		}
-		count++
 
-		msg = handler.WebMsg{
+		msg = model.WebMsg{
 			Type: "logs",
 			Logs: logs,
 		}

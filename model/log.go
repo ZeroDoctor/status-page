@@ -4,16 +4,16 @@ import "database/sql/driver"
 
 // Log :
 type Log struct {
-	Type       string `json:"log_type"`
-	Msg        string `json:"msg"`
-	LogTime    string `json:"log_time"`
-	FileName   string `json:"file_name"`
-	FuncName   string `json:"func_name"`
-	LineNumber int    `json:"line_number"`
-	Index      int64  `json:"index"`
-	Session    int    `json:"session"`
-	AppID      string `json:"app_id"`
-	AppName    string `json:"app_name"`
+	Type       string `db:"type" json:"log_type"`
+	Msg        string `db:"msg" json:"msg"`
+	LogTime    string `db:"log_time" json:"log_time"`
+	FileName   string `db:"file_name" json:"file_name"`
+	FuncName   string `db:"func_name" json:"func_name"`
+	LineNumber int    `db:"line_number" json:"line_number"`
+	Index      int64  `db:"id" json:"index"`
+	Session    int    `db:"session" json:"session"`
+	AppID      string `db:"app_id" json:"app_id"`
+	AppName    string `db:"app_name" json:"app_name"`
 }
 
 // Value :

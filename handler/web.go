@@ -38,6 +38,19 @@ func NewWebHandler(dbHandler *DBHandler) *WebHandler {
 	}
 }
 
+func (wh *WebHandler) WsSend(connID string, msg model.WebMsg) {
+	if conn, ok := wh.clients[connID]; ok {
+		err := conn.WriteJSON(msg)
+		if err != nil {
+			ppt.Warnln("failed to write to client:", err.Error())
+			fmt.Println("removing client:", connID)
+			delete(wh.clients, connID)
+		}
+	} else {
+		ppt.Warnln("failed to find client:", connID)
+	}
+}
+
 // WsBroadcast :
 func (wh *WebHandler) WsBroadcast() {
 
@@ -50,9 +63,8 @@ func (wh *WebHandler) WsBroadcast() {
 			if _, ok := wh.clients[connID]; ok {
 				err := conn.WriteJSON(msg)
 				if err != nil {
-					ppt.Warnf("Failed to write to client: %s\n", err)
-
-					fmt.Printf("Removing client %s\n", connID)
+					ppt.Warnf("failed to write to client: %s\n", err)
+					fmt.Printf("removing client %s\n", connID)
 					delete(wh.clients, connID)
 				} else {
 					if len(buffMsg[connID]) > 0 {
@@ -113,7 +125,11 @@ func (wh *WebHandler) Websocket(ctx *gin.Context) {
 	wh.clients[data] = conn
 
 	if webMsg.Type == "web" {
-
+		logs := wh.dbHandler.FetchLogs()
+		wh.WsSend(data, model.WebMsg{
+			Type: "logs",
+			Data: logs,
+		})
 	}
 
 	if webMsg.Type == "client" {

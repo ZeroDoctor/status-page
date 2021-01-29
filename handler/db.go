@@ -169,6 +169,19 @@ func (dbh *DBHandler) SaveLogs(logs []model.Log) []model.Log {
 	return logs
 }
 
+// FetchLogs :
+func (dbh *DBHandler) FetchLogs() []model.Log {
+	var logs []model.Log
+
+	query := "SELECT * FROM logs ORDER BY log_time ASC LIMIT 50;"
+	err := dbh.local.Select(&logs, query)
+	if err != nil {
+		ppt.Errorln("failed to query all logs:\n\t", err.Error())
+	}
+
+	return logs
+}
+
 // printRows : creates a string of '(?)' for each item submited to database
 func printRows(total int) string {
 	var str strings.Builder
